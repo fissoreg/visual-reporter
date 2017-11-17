@@ -1,48 +1,57 @@
 using Boltzmann
 using Plots, Images
 using Stats
+using Boltzmann
+using MNIST_utils
+
+# TODO:
+#  - define constructor (initializing plots in it)
+#  - implement preprocessing
+#  - eval() should probably be removed, using a Dict
+#  - how to pass Plots arguments to plot()?
 
 struct VisualReporter <: Boltzmann.BatchReporter
   every::Int
-  exec::Function
+  pre::Dict{Symbol,Any}
+  plots::Array{Dict{Symbol,Any},1}
 end
 
-function samplesToImg(samples; c=10, r=10)
-  f = zeros(r*28,c*28)
-  for i=1:r, j=1:c
-    f[(i-1)*28+1:i*28,(j-1)*28+1:j*28] = reshape(samples[:,(i-1)*c+j],28,28)
-  end
-  w_min = minimum(samples)
-  w_max = maximum(samples)
-  λ = x -> (x-w_min)/(w_max-w_min)
-  map!(λ,f,f)
-  colorview(Gray,f)
-end
+pre = Dict(
+  :in => :W,
+  :preprocessor => svd,
+  :out => (:U, :s, :V)
+)
 
-function saveSamples(samples;path="samples.jpg")
-  img = samplesToImg(samples)
-  println(path)
-  Images.save(path,img)
-  #plot(img)
-end
+p1 = Dict(
+  :ys => [:X],
+  :transforms = [x -> samplesToImg(generate(x[:,1:100], n_gibbs=15))],
+  :title = "Sampling"
+)
 
-p2 = plot([mean,var,kurtosis], 1, rand(100))
+p2 = Dict(
+  :ys => [:U, :V],
+  :transforms => [mean, mean],
+  :labels => ["U", "V"],
+  :title => "Means",
+  :incremental => true
+)
 
-function exec(rbm::AbstractRBM, epoch::Int, score, ctx::Dict{Any,Any})
-  U,s,V = svd(rbm.W)
+function report(reporter::VisualReporter, rbm::AbstractRBM, epoch::Int, current_batch::Int, scorer::Function, X::Boltzmann.Mat, ctx::Dict{Any,Any})
   
-  p1 = plot(samplesToImg(ctx[:persistent_chain]))
-  push!(uk, kurtosis(U))
-  push!(p2, 1, mean(U))
-  push!(p2, 2, var(U))
-  push!(p2, 3, kurtosis(U))
-  p3 = histogram(U[:], nbins=100, yscale=:log10)
-  p4 = histogram(V[:], nbins=100, yscale=:log10)
+  # aliases (make :W, :v and :h symbols available)
+  W = rbm.W
+  v = rbm.vbias
+  h = rbm.hbias
 
-  #gui(p1)
-  println(epoch)
-  plot(p1, p2, p3, p4)
-  gui()
+  for plot in reporter.plots
+    if haskey(plot, :incremental) && plot[:incremental]
+      for i=1:length(plot[:ys])
+        push!(plot[:plot], i, plot[:transforms][i](eval(plot[:ys][i])))
+      end
+    else
+        plot[:plot] = plot(hcat(map((f,x) -> f(eval(x)), zip(plot[:transforms], plot[:ys]))))
+    end
+  end
 end
 
 X = randn(784, 2000)    # 2000 observations (examples) #  with 100 variables (features) each

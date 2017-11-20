@@ -5,10 +5,10 @@ using Boltzmann
 using MNIST_utils
 
 # TODO:
-#  - define constructor (initializing plots in it)
-#  - implement preprocessing
+#  - define constructor (initializing plots in it) - Done!
+#  - implement preprocessing - Settling...
 #  - eval() should probably be removed, using a Dict
-#  - how to pass Plots arguments to plot()?
+#  - how to pass Plots arguments to plot()? - SOLVED: splat Dict after semicolon, arg names being symbols
 
 struct VisualReporter <: Boltzmann.BatchReporter
   every::Int
@@ -36,6 +36,49 @@ p2 = Dict(
   :incremental => true
 )
 
+function get_args(rbm::AbstractRBM, args::Dict{Symbol,Any}...)
+  merge(Dict(:W => rbm.W, :vbias => rbm.vbias, :hbias => rbm.hbias), args...)
+end
+
+function y_values(args, ys)
+  [args[k] for k in ys]
+end
+
+function apply_transforms(plot, ys)
+  hcat(map((f,x) -> f(x), zip(plot[:transforms], ys)))
+end
+
+function plot_final(plot, args)
+  ys = y_values(plot[:ys])
+  transformed = apply_transforms(plot, ys)
+  plot[:plot] = plot(apply_transform(plot, ys))
+end
+
+function init_plot_incremental(plot, args)
+  plot[:plot] = plot(0, apply_transforms(plot, ys))
+end
+
+function update_plot_incremental(plot, args)
+  for i=1:length(plot[:ys])
+    # NOTE: see if the following could be a special case of apply_transforms()
+    push!(plot[:plot], i, plot[:transforms][i](plot[:ys][i]))
+  end
+end
+
+function VisualReporter(rbm::AbstractRBM, every::Int, pre::Dict{Symbol,Any}, plots::Array{Dict{Symbol,Any},1}, init::Dict{Symbol,Any})
+  args = get_args(rbm, init)
+  new_args = preprocessing(pre, args)
+  args = merge(args, new_args)
+   
+  for p in plots
+    if haskey(plot, :incremental) && plot[:incremental]
+      init_plot_incremental(plot, args)
+    else
+      plot_final(plot, args)
+    end
+  end
+end
+
 function report(reporter::VisualReporter, rbm::AbstractRBM, epoch::Int, current_batch::Int, scorer::Function, X::Boltzmann.Mat, ctx::Dict{Any,Any})
   
   # aliases (make :W, :v and :h symbols available)
@@ -44,13 +87,6 @@ function report(reporter::VisualReporter, rbm::AbstractRBM, epoch::Int, current_
   h = rbm.hbias
 
   for plot in reporter.plots
-    if haskey(plot, :incremental) && plot[:incremental]
-      for i=1:length(plot[:ys])
-        push!(plot[:plot], i, plot[:transforms][i](eval(plot[:ys][i])))
-      end
-    else
-        plot[:plot] = plot(hcat(map((f,x) -> f(eval(x)), zip(plot[:transforms], plot[:ys]))))
-    end
   end
 end
 

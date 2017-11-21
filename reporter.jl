@@ -11,6 +11,7 @@ struct VisualReporter <: Boltzmann.BatchReporter
   every::Int
   pre::Dict{Symbol,Any}
   plots::Array{Dict{Symbol,Any},1}
+  args::Dict{Symbol,Any}
 end
 
 function preprocessing(pre::Dict{Symbol,Any}, args::Dict)
@@ -18,10 +19,10 @@ function preprocessing(pre::Dict{Symbol,Any}, args::Dict)
   Dict(zip(pre[:out], out))
 end
 
-function get_args(rbm::AbstractRBM, args::Dict... ; pre=Dict())
-  full_args = merge(Dict(:W => rbm.W, :vbias => rbm.vbias, :hbias => rbm.hbias), args...)
-  new_args = isempty(pre) ? pre : preprocessing(pre, full_args)
-  merge(new_args, full_args)
+function update_args!(source::Dict, args::Dict...; pre::Dict=Dict())
+  processed = isempty(pre) ? pre : preprocessing(pre, merge(source, args...))
+  # NOTE: order is important! Processed args replace old args.
+  merge!(source, args..., processed)
 end
 
 function get_plot_args(plot)
@@ -39,7 +40,7 @@ function apply_transforms(plot, ys)
   if size(t)[1] == 1
     t[1]
   else
-    hcat(t)
+    hcat(t')
   end
 end
 
@@ -53,37 +54,47 @@ function plot_final!(p, args)
 end
 
 function init_plot_incremental!(p, args)
-  p[:plot] = plot(0, get_plot_data(p, args); get_plot_args(p)...)
+  data = get_plot_data(p, args)
+  p[:plot] = plot(1, data; get_plot_args(p)...)
 end
 
 function update_plot_incremental!(p, args)
   for i=1:length(p[:ys])
     # NOTE: see if the following could be a special case of apply_transforms()
-    push!(p[:plot], i, p[:transforms][i](p[:ys][i]))
+    push!(p[:plot], i, p[:transforms][i](args[p[:ys][i]]))
   end
 end
 
-function VisualReporter(rbm::AbstractRBM, every::Int, pre::Dict{Symbol,Any}, plots::Array{Dict{Symbol,Any},1}; init=Dict())
-  println("IN")
-  args = get_args(rbm, init, pre=pre) 
+function make_plots!(plots, args; init=false)
   for p in plots
     if haskey(p, :incremental) && p[:incremental]
-      init_plot_incremental!(p, args)
+      f = init ? init_plot_incremental! : update_plot_incremental!
+      f(p, args)
     else
       plot_final!(p, args)
     end
   end
+end
+
+function VisualReporter(rbm::AbstractRBM, every::Int, pre::Dict{Symbol,Any}, plots::Array{Dict{Symbol,Any},1}; init=Dict())
+  # initializing args is done updating "init" args
+  args = Dict()
+  update_args!(args, Dict(:W => rbm.W, :vbias => rbm.vbias, :hbias => rbm.hbias), init; pre=pre)
+  make_plots!(plots, args; init=true)
   plot(map(p -> p[:plot], plots)...)
   gui()
   println("Init done.")
   
-  VisualReporter(every, pre, plots)
+  VisualReporter(every, pre, plots, args)
 end
 
 function report(reporter::VisualReporter, rbm::AbstractRBM, epoch::Int, current_batch::Int, scorer::Function, X::Boltzmann.Mat, ctx::Dict{Any,Any})
   println("Reporting")
-  #for plot in reporter.plots
-  #end
+  
+  update_args!(reporter.args, Dict(:X => X, :W => rbm.W), ctx; pre=reporter.pre)
+  make_plots!(reporter.plots, reporter.args)
+  plot(map(p -> p[:plot], reporter.plots)...)
+  gui()
 end
 
 using MNIST_utils

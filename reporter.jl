@@ -6,7 +6,7 @@ using MNIST_utils
 
 # TODO:
 #  - define constructor (initializing plots in it) - Done!
-#  - implement preprocessing - Settling...
+#  - implement preprocessing - Done!
 #  - eval() should probably be removed, using a Dict
 #  - how to pass Plots arguments to plot()? - SOLVED: splat Dict after semicolon, arg names being symbols
 
@@ -17,9 +17,9 @@ struct VisualReporter <: Boltzmann.BatchReporter
 end
 
 pre = Dict(
-  :in => :W,
+  :in => [:W],
   :preprocessor => svd,
-  :out => (:U, :s, :V)
+  :out => [:U, :s, :V]
 )
 
 p1 = Dict(
@@ -63,6 +63,11 @@ function update_plot_incremental(plot, args)
     # NOTE: see if the following could be a special case of apply_transforms()
     push!(plot[:plot], i, plot[:transforms][i](plot[:ys][i]))
   end
+end
+
+function preprocessing(pre::Dict{Symbol,Any}, args::Dict{Symbol,Any})
+  out = pre[:preprocessing](y_values(args, pre[:in])...)
+  Dict(zip(pre[:out], out))
 end
 
 function VisualReporter(rbm::AbstractRBM, every::Int, pre::Dict{Symbol,Any}, plots::Array{Dict{Symbol,Any},1}, init::Dict{Symbol,Any})

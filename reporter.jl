@@ -94,6 +94,37 @@ function VisualReporter(rbm::AbstractRBM, every::Int, pre::Dict{Symbol,Any}, plo
   VisualReporter(every, pre, plots, args)
 end
 
+function default_reporter(rbm::AbstractRBM, every::Int)
+  pre = Dict(
+    :in => [:W],
+    :preprocessor => svd,
+    :out => [:U, :s, :V]
+  )
+  
+  p1 = Dict(
+    :ys => [:W],
+    :transforms => [x->x[:]],
+    :title => "Weights",
+    :seriestype => :histogram
+  )
+
+  p2 = Dict(
+    :ys => [(:rbm, :X)],
+    :transforms => [(rbm, X) -> samplesToImg(generate(rbm, X[:,1:100], n_gibbs=15))],
+    :title => "Sampling"
+  )
+  
+  p3= Dict(
+    :ys => [:U, :V],
+    :transforms => [mean, mean],
+    :labels => ["U", "V"],
+    :title => "Means",
+    :incremental => true
+  )
+
+  VisualReporter(rbm, every, pre, [p1, p2, p3], init=Dict(:X => X))
+end
+
 function report(reporter::VisualReporter, rbm::AbstractRBM, epoch::Int, current_batch::Int, scorer::Function, X::Boltzmann.Mat, ctx::Dict{Any,Any})
   println("Reporting")
   
@@ -110,25 +141,6 @@ X = (X + abs(minimum(X))) / (maximum(X) - minimum(X)) # scale X to [0..1]
 rbm = GRBM(784, 500)     # define Gaussian RBM with 100 visible (input) 
                         #  and 50 hidden (output) variables
 
-pre = Dict(
-  :in => [:W],
-  :preprocessor => svd,
-  :out => [:U, :s, :V]
-)
-
-p1 = Dict(
-  :ys => [(:rbm, :X)],
-  :transforms => [(rbm, X) -> samplesToImg(generate(rbm, X[:,1:100], n_gibbs=15))],
-  :title => "Sampling"
-)
-
-p2 = Dict(
-  :ys => [:U, :V],
-  :transforms => [mean, mean],
-  :labels => ["U", "V"],
-  :title => "Means",
-  :incremental => true
-)
-
-vr = VisualReporter(rbm, 10, pre, [p1, p2], init=Dict(:X => X))
+#vr = VisualReporter(rbm, 10, pre, [p1, p2], init=Dict(:X => X))
+vr = default_reporter(rbm, 10)
 fit(rbm, X, reporter=vr) 

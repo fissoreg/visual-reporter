@@ -14,6 +14,8 @@ struct VisualReporter <: Boltzmann.BatchReporter
   args::Dict{Symbol,Any}
 end
 
+# NOTE: :preprocessor is unique while :tranforms are array;
+# it would probably be better to treat them in the same way.
 function preprocessing(pre::Dict{Symbol,Any}, args::Dict)
   out = pre[:preprocessor](y_values(args, pre[:in])...)
   Dict(zip(pre[:out], out))
@@ -31,11 +33,11 @@ function get_plot_args(plot)
 end
 
 function y_values(args, ys)
-  [args[k] for k in ys]
+  [typeof(ks) <: Tuple ? map(k -> args[k], ks) : args[ks] for ks in ys]
 end
 
 function apply_transforms(plot, ys)
-  t = [f(x) for (f,x) in zip(plot[:transforms], ys)]
+  t = [typeof(x) <: Tuple ? f(x...) : f(x) for (f,x) in zip(plot[:transforms], ys)]
   # WARNING: there's probably a more robust way...
   if size(t)[1] == 1
     t[1]
@@ -76,10 +78,14 @@ function make_plots!(plots, args; init=false)
   end
 end
 
+function args_aliases(rbm)
+  Dict(:rbm => rbm, :W => rbm.W, :vbias => rbm.vbias, :hbias => rbm.hbias)
+end
+
 function VisualReporter(rbm::AbstractRBM, every::Int, pre::Dict{Symbol,Any}, plots::Array{Dict{Symbol,Any},1}; init=Dict())
   # initializing args is done updating "init" args
   args = Dict()
-  update_args!(args, Dict(:W => rbm.W, :vbias => rbm.vbias, :hbias => rbm.hbias), init; pre=pre)
+  update_args!(args, args_aliases(rbm), init; pre=pre)
   make_plots!(plots, args; init=true)
   plot(map(p -> p[:plot], plots)...)
   gui()
@@ -91,7 +97,7 @@ end
 function report(reporter::VisualReporter, rbm::AbstractRBM, epoch::Int, current_batch::Int, scorer::Function, X::Boltzmann.Mat, ctx::Dict{Any,Any})
   println("Reporting")
   
-  update_args!(reporter.args, Dict(:X => X, :W => rbm.W), ctx; pre=reporter.pre)
+  update_args!(reporter.args, Dict(:X => X), args_aliases(rbm), ctx; pre=reporter.pre)
   make_plots!(reporter.plots, reporter.args)
   plot(map(p -> p[:plot], reporter.plots)...)
   gui()
@@ -101,7 +107,7 @@ using MNIST_utils
 
 X = randn(784, 2000)    # 2000 observations (examples) #  with 100 variables (features) each
 X = (X + abs(minimum(X))) / (maximum(X) - minimum(X)) # scale X to [0..1]
-rbm = GRBM(784, 50)     # define Gaussian RBM with 100 visible (input) 
+rbm = GRBM(784, 500)     # define Gaussian RBM with 100 visible (input) 
                         #  and 50 hidden (output) variables
 
 pre = Dict(
@@ -111,8 +117,8 @@ pre = Dict(
 )
 
 p1 = Dict(
-  :ys => [:X],
-  :transforms => [x -> samplesToImg(generate(rbm, x[:,1:100], n_gibbs=15))],
+  :ys => [(:rbm, :X)],
+  :transforms => [(rbm, X) -> samplesToImg(generate(rbm, X[:,1:100], n_gibbs=15))],
   :title => "Sampling"
 )
 

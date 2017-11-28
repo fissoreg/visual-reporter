@@ -40,7 +40,7 @@ function apply_transforms(plot, ys)
   t = [typeof(x) <: Tuple ? f(x...) : f(x) for (f,x) in zip(plot[:transforms], ys)]
   # WARNING: there's probably a more robust way...
   if size(t)[1] == 1
-    [t[1]]
+    typeof(t[1]) <: Number ? t : t[1]
   else
     hcat(t')
   end

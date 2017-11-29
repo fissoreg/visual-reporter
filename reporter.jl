@@ -1,8 +1,22 @@
-#module VisualReporter
-
 using Boltzmann
 using Plots, Images
 using Stats
+
+# MNIST #############################################################
+using Images
+
+function samplesToImg(samples; c=10, r=10, h=28, w=28)
+  f = zeros(r*h,c*w)
+  for i=1:r, j=1:c
+    f[(i-1)*h+1:i*h,(j-1)*w+1:j*w] = reshape(samples[:,(i-1)*c+j],h,w)
+  end
+  w_min = minimum(samples)
+  w_max = maximum(samples)
+  λ = x -> (x-w_min)/(w_max-w_min)
+  map!(λ,f,f)
+  colorview(Gray,f)
+end
+######################################################################
 
 # importing function to extend
 import Boltzmann.report
@@ -101,6 +115,9 @@ function VisualReporter(rbm::AbstractRBM, every::Int, pre::Dict{Symbol,Any}, plo
   VisualReporter(every, pre, plots, args)
 end
 
+# activations
+activations = []
+
 function default_reporter(rbm::AbstractRBM, every::Int, X)
   pre = Dict(
     :in => [:W],
@@ -112,32 +129,86 @@ function default_reporter(rbm::AbstractRBM, every::Int, X)
     :ys => [:W],
     :transforms => [x->x[:]],
     :title => "Weights",
-    :seriestype => :histogram
+    :seriestype => :histogram,
+    :leg => false,
+    :nbins => 50
   )
-
+  
   p2 = Dict(
     :ys => [(:rbm, :X)],
     :transforms => [Boltzmann.pseudo_likelihood],
     :title => "PL",
-    :incremental => true
+    :incremental => true,
+    :leg => false
   )
-
-  p3= Dict(
+  
+  p3 = Dict(
+    :ys => [:W],
+    :transforms => [x -> samplesToImg(x')],
+    :title => "Features"
+  )
+  #p3= Dict(
+  #  :ys => [:U, :V],
+  #  :transforms => [mean, mean],
+  #  :labels => ["U", "V"],
+  #  :title => "Means",
+  #  :incremental => true
+  #)
+  
+  p4 = Dict(
+    :ys => [:U],
+    :transforms => [x->x[:]],
+    :title => "U distribution",
+    :seriestype => :histogram,
+    :leg => false,
+    :yscale => :log10
+  )
+  
+  p5 = Dict(
+    :ys => [:V],
+    :transforms => [x->x[:]],
+    :title => "V distribution",
+    :seriestype => :histogram,
+    :leg => false,
+    :yscale => :log10
+  )
+  
+  p6 = Dict(
+    :ys => [(:rbm, :X)],
+    :transforms => [(rbm, X) -> samplesToImg(generate(rbm, X[:,1:100], n_gibbs=15))],
+    :title => "Sampling"
+  )
+  
+  p8 = Dict(
     :ys => [:U, :V],
-    :transforms => [mean, mean],
-    :labels => ["U", "V"],
-    :title => "Means",
+    :transforms => [kurtosis, kurtosis],
+    :title => "Kurtosis",
     :incremental => true
   )
-
-  VisualReporter(rbm, every, pre, [p1, p2, p3], init=Dict(:X => X))
+  
+  p7 = Dict(
+    :ys => [:s for i=1:50],
+    :transforms => [x -> x[i] for i=1:50],
+    :incremental => true,
+    :title => "Singular values",
+    :leg => false
+  )
+  
+  function push_activations!(rbm::AbstractRBM, samples::Array{T,2}) where T
+    m = mean(Boltzmann.sample_hiddens(rbm, samples)[1], 2)
+    global activations = length(activations) == 0 ? m : hcat(activations, m)
+    activations
+  end
+  
+  p9 = Dict(
+    :ys => [(:rbm, :X)],
+    :transforms => [(rbm, X) -> push_activations!(rbm, X)],
+    :seriestype => :heatmap,
+    :title => "Activations"
+  )
+  
+  VisualReporter(rbm, 100, pre, [p6, p1, p2, p3, p4, p5, p8, p7, p9], init=Dict(:X => X))
 end
-
-p2 = Dict(
-  :ys => [(:rbm, :X)],
-  :transforms => [(rbm, X) -> samplesToImg(generate(rbm, X[:,1:100], n_gibbs=15))],
-  :title => "Sampling"
-)
 
 function report(reporter::VisualReporter, rbm::AbstractRBM, epoch::Int, current_batch::Int, scorer::Function, X::Boltzmann.Mat, ctx::Dict{Any,Any})
   println("Reporting")
@@ -147,14 +218,3 @@ function report(reporter::VisualReporter, rbm::AbstractRBM, epoch::Int, current_
   plot(map(p -> p[:plot], reporter.plots)...)
   gui()
 end
-
-using MNIST_utils
-
-#X = randn(784, 2000)    # 2000 observations (examples) #  with 100 variables (features) each
-#X = (X + abs(minimum(X))) / (maximum(X) - minimum(X)) # scale X to [0..1]
-#rbm = GRBM(784, 500)     # define Gaussian RBM with 100 visible (input) 
-#                        #  and 50 hidden (output) variables
-#
-##vr = VisualReporter(rbm, 10, pre, [p1, p2], init=Dict(:X => X))
-#vr = default_reporter(rbm, 10)
-#fit(rbm, X, reporter=vr) 

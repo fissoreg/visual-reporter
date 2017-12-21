@@ -1,9 +1,21 @@
 using Boltzmann
 using Plots, Images
 using Stats
-using MNIST_utils
+#using MNIST_utils
 
 include("../mf-rbm/mf.jl")
+
+function samplesToImg(samples; c=10, r=10, h=28, w=28)
+  f = zeros(r*h,c*w)
+  for i=1:r, j=1:c
+    f[(i-1)*h+1:i*h,(j-1)*w+1:j*w] = reshape(samples[:,(i-1)*c+j],h,w)
+  end
+  w_min = minimum(samples)
+  w_max = maximum(samples)
+  λ = x -> (x-w_min)/(w_max-w_min)
+  map!(λ,f,f)
+  colorview(Gray,f)
+end
 
 # font settings
 f = Plots.font("Helvetica",4)
@@ -119,7 +131,7 @@ fps = []
 
 function preprop(rbm::RBM,X)
   U,s,V = svd(rbm.W)
-  global fps = condensed_fps(rbm; fps=fps, params=Dict(:max_iter=>1000,:X=>X))
+  global fps = get_fps(rbm; fps=fps, init=X[:,rand(1:size(X,2),100)], params=Dict(:max_iter=>1000))
   U,s,V,fps
 end
 

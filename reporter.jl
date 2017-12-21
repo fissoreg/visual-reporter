@@ -236,21 +236,37 @@ function default_reporter(rbm::AbstractRBM, every::Int, X)
     :seriestype => :heatmap,
     :title => "Activations"
   )
-  
+
   # highest singular value (time-series)
   was = []
+  was2 = []
   variances = []
   
-  function phase_diagram!(W::Array{T,2}, wa::Real) where T
-    push!(variances, var(W))
+  function phase_diagram!(W::Array{T,2}, wa::Real, wa2::Real) where T
+    U,s,V = svd(W)
+    s[1:20] = zeros(20)
+    W = U * diagm(s) * V'
+    push!(variances, std(W))
     push!(was, wa)
-    (was ./ variances, 1 ./ variances)
+    push!(was2, wa2)
+    # inverse variances
+    inv_variances = 1 ./ variances
+    pf_line = linspace(1, 1500, 20) #maximum(inv_variances), 20)
+    (vcat(was ./ variances, was2 ./ variances, pf_line), vcat(inv_variances, inv_variances, pf_line))
   end
-  
+
   p10 = Dict(
-    :ys => [(:W, :s)],
-    :transforms => [(W,s) -> phase_diagram!(W, s[1])],
-    :seriestype => :scatter
+    :ys => [(:W, :s, :s)],
+    :transforms => [
+                     (W,s,t) -> phase_diagram!(W, s[1], t[2])
+                   ],
+    :seriestype => :scatter,
+    :leg => false,
+    :title => "Phase diagram",
+    :marker => :+,
+    :markersize => 0.5,
+    :xscale => :log10,
+    :yscale => :log10
   )
 
   function fp(rbm, X)

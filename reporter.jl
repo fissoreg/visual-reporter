@@ -115,7 +115,7 @@ function VisualReporter(rbm::AbstractRBM, every::Int, pre::Dict{Symbol,Any}, plo
   update_args!(args, args_aliases(rbm), init; pre=pre)
   make_plots!(plots, args; init=true)
   plot(map(p -> p[:plot], plots)...)
-  gui()
+  #gui()
   anim = Animation()
   #frame(anim)
   println("Init done.")
@@ -139,7 +139,6 @@ function fps_to_img(fps)
   # row size
   row = 10
   n = size(fps, 2)
-  println("# fps: ", n)
 
   r = n > row ? div(n,row) : 1
   c = n > row ? row : n
@@ -184,24 +183,40 @@ function default_reporter(rbm::AbstractRBM, every::Int, X)
   #  :title => "Means",
   #  :incremental => true
   #)
-  
+
   p4 = Dict(
-    :ys => [:U],
-    :transforms => [x->x[:]],
-    :title => "U distribution",
-    :seriestype => :histogram,
-    :leg => false,
-    :yscale => :log10
-  )
-  
+    :ys => [(:V, :vbias) for i=1:5],
+    :transforms => [(V, vbias) -> abs(dot(V[:,i], vbias)) for i=1:5],
+    :incremental => true,
+    :title => "vbias (abs)",
+    :leg => false
+)
+
   p5 = Dict(
-    :ys => [:V],
-    :transforms => [x->x[:]],
-    :title => "V distribution",
-    :seriestype => :histogram,
-    :leg => false,
-    :yscale => :log10
-  )
+    :ys => [(:U, :hbias) for i=1:5],
+    :transforms => [(U, hbias) -> abs(dot(U[:,i], hbias)) for i=1:5],
+    :incremental => true,
+    :title => "hbias (abs)",
+    :leg => false
+)
+
+#  p4 = Dict(
+#    :ys => [:U],
+#    :transforms => [x->x[:]],
+#    :title => "U distribution",
+#    :seriestype => :histogram,
+#    :leg => false,
+#    :yscale => :log10
+#  )
+#  
+#  p5 = Dict(
+#    :ys => [:V],
+#    :transforms => [x->x[:]],
+#    :title => "V distribution",
+#    :seriestype => :histogram,
+#    :leg => false,
+#    :yscale => :log10
+#  )
   
   p6 = Dict(
     :ys => [(:rbm, :X)],
@@ -244,7 +259,8 @@ function default_reporter(rbm::AbstractRBM, every::Int, X)
   
   function phase_diagram!(W::Array{T,2}, wa::Real, wa2::Real) where T
     U,s,V = svd(W)
-    s[1:20] = zeros(20)
+    map!(x -> x > 1 ? 0 : x, s, s)
+    #s[1:20] = zeros(20)
     W = U * diagm(s) * V'
     push!(variances, std(W))
     push!(was, wa)
@@ -299,11 +315,13 @@ function default_reporter(rbm::AbstractRBM, every::Int, X)
 end
 
 function report(reporter::VisualReporter, rbm::AbstractRBM, epoch::Int, current_batch::Int, scorer::Function, X::Boltzmann.Mat, ctx::Dict{Any,Any})
-  println("Reporting")
   
   update_args!(reporter.args, Dict(:X => X), args_aliases(rbm), ctx; pre=reporter.pre)
   make_plots!(reporter.plots, reporter.args)
   plot(map(p -> p[:plot], reporter.plots)...)
   gui()
-  #frame(reporter.anim)
+  frame(reporter.anim)
+  
+  # textual logging
+  println("Epoch $epoch - Batch $current_batch: $(scorer(rbm,X))")
 end

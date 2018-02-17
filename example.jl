@@ -1,56 +1,78 @@
 using Boltzmann
 using MNIST
 
-nh = 100
-sigma = 0.001
-n_epochs = 2
-lr = 1e-6
-batch_size = 20
-eps = 1e-8
-max_iter = 1000
-randomize = true
-name = "rbm"
-
 include("reporter.jl")
-include("../mf-rbm/mf.jl")
 
-X, y = traindata()  # test data is smaller, no need to downsample
-X = 2(X  ./ (maximum(X) - minimum(X))) - 1
-
-rbm = IsingRBM(28*28, nh; sigma=sigma, X=X)
-
-start = time()
-
-vr = default_reporter(rbm, 100, X)
-fit(rbm, X;
-    n_epochs=n_epochs,
-    lr=lr,
-    batch_size=batch_size,
-    eps=eps,
-    max_iter=max_iter,
-    randomize=randomize,
-    scorer=Boltzmann.pseudo_likelihood,
-    reporter=vr, init=Dict(:X => X)
-   )
-
-t = time() - start
-println("Elapsed: $(t/60/60)")
-
-#sampler=tap_gradient,
-
-filename = string(name, "_", nh,"_",sigma,"_",n_epochs,"_",lr,"_",batch_size,"_",eps,"_",max_iter,"_",randomize)
-dir = string("log/",filename)
-
-try
-  mkdir("log")
-  mkdir(string("log/",filename))
+# we need to reshape weights/samples for visualization purposes
+function reshape_mnist(samples; c=10, r=10, h=28, w=28)
+  f = zeros(r*h,c*w)
+  for i=1:r, j=1:c
+    f[(i-1)*h+1:i*h,(j-1)*w+1:j*w] = reshape(samples[:,(i-1)*c+j],h,w)
+  end
+  w_min = minimum(samples)
+  w_max = maximum(samples)
+  scale = x -> (x-w_min)/(w_max-w_min)
+  map!(scale,f,f)
+  colorview(Gray,f)
 end
 
-include("log.jl")
+# hyperparameters
+nh = 100
+sigma = 0.001
+n_epochs = 200
+lr = 1e-5
+batch_size = 100
+randomize = true
 
-mp4(vr.anim, string(dir,"/",filename,".mp4"), fps=2)
-gif(vr.anim, string(dir,"/",filename,".gif"))
+X, _ = traindata()
+X = 2(X  ./ (maximum(X) - minimum(X))) - 1
 
-writedlm(string(dir,"/W.dat"),rbm.W)
-writedlm(string(dir,"/vbias.dat"),rbm.vbias)
-writedlm(string(dir,"/hbias.dat"), rbm.hbias)
+# using +- 1 binary units (Ising spins)
+rbm = IsingRBM(28*28, nh; sigma=sigma, X=X)
+
+# declaring wanted plots
+weights = Dict(
+  :ys => [:W],
+  :transforms => [x->x[:]],
+  :title => "Weights",
+  :seriestype => :histogram,
+  :leg => false,
+  :nbins => 100
+)
+
+PL = Dict(
+  :ys => [(:rbm, :X)],
+  :transforms => [Boltzmann.pseudo_likelihood],
+  :title => "Pseudolikelihood",
+  :incremental => true,
+  :leg => false
+)
+  
+features = Dict(
+  :ys => [:W],
+  :transforms => [W -> reshape_mnist(W')],
+  :title => "Features",
+  :ticks => nothing
+)
+
+reconstructions = Dict(
+  :ys => [(:rbm, :X)],
+  :transforms => [(rbm, X) -> reshape_mnist(generate(rbm, X[:,1:100], n_gibbs=1))],
+  :title => "Reconstructions",
+  :ticks => nothing
+)
+  
+# getting the reporter
+vr = VisualReporter(rbm, 600, [weights, PL, features, reconstructions], init=Dict(:X => X))
+
+fit(rbm, X;
+  n_epochs=n_epochs,
+  lr=lr,
+  batch_size=batch_size,
+  randomize=randomize,
+  scorer=Boltzmann.pseudo_likelihood,
+  reporter=vr, init=Dict(:X => X)
+)
+
+mp4(vr.anim, "mnist_log.mp4", fps=2)
+gif(vr.anim, "mnist_log.gif")
